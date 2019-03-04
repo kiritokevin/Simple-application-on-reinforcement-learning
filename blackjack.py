@@ -128,11 +128,19 @@ def simulate_one_step(state, action, userCard, dealCard, ccards, stand):
     if len(userCard) == 2 and userSum == 21:
         gameover = True
 
+    # take action since usersum < 17
+    if not (gameover or stand):
+        #Give player a card
+        card, cA = genCard(ccards, userCard)
+        userA += cA
+        userSum += getAmt(card)
+        while userSum > 21 and userA > 0:
+            userA -= 1
+            userSum -= 10
 
-    # stand case, simulate dealSum and collect rewards
-    if not gameover and stand:
-        #Dealer plays, user stands
-        while dealSum < 17:
+    # stand case: dealer should play
+    elif not gameover and action == 1:
+        while dealSum <= userSum and dealSum < 17:
             card, cA = genCard(ccards, dealCard)
             dealA += cA
             dealSum += getAmt(card)
@@ -140,47 +148,34 @@ def simulate_one_step(state, action, userCard, dealCard, ccards, stand):
                 dealA -= 1
                 dealSum -= 10
 
-        # collect reward
-        if dealSum > userSum:
-            reward = -1
-        elif dealSum < userSum:
+    # check game over again since we might change usersum
+    if (userSum >= 21 and userA == 0) or len(userCard) == 5:
+        gameover = True
+    else:
+        gameover = False
+
+    # calculate reward
+    # if not game over or stand, reward should be 0
+    if not (gameover or stand):
+        reward = 0
+
+    #  compare to simulate sequence, we need to check rewards afterward
+    if gameover or stand:
+        # draw
+        if userSum <= 21 and userSum == dealSum:
+            reward = 0
+        elif userSum <= 21 and len(userCard) == 5:
+            reward = 1
+        elif userSum <= 21 and dealSum < userSum or dealSum > 21:
             reward = 1
         else:
-            reward = 0
+            reward = -1
+        return make_state(userSum, userA, dealFirst, dealAFirst), reward, gameover
 
-        # return since we have already reached terminate point
-        return None, reward, dealSum
-
-    # not stand case
-    else:
-        # collect reward first
-        if gameover:
-            if (userSum <= 21 and len(userCard) == 5) or userSum == 21:
-                reward = 1
-            elif len(userCard) == 2 and userSum == 21:
-                reward = 1
-            else:
-                reward = -1
-
-            # return since we have already reached terminate point
-            return None, reward, dealSum
-
-        else:
-            # calculate reward
-            # if not game over or stand, reward should be 0
-            if not stand:
-                reward = 0
-
-            # hit the new card
-            card, cA = genCard(ccards, userCard)
-            userA += cA
-            userSum += getAmt(card)
-            while userSum > 21 and userA > 0:
-                userA -= 1
-                userSum -= 10
-
+    # return the state with reward if nothing happens
     state = make_state(userSum, userA, dealFirst, dealAFirst)
-    return state,reward, dealSum
+    return state,reward, gameover
+
 
 # calculate the reward of state if we choose that state
 # gamma: discount factor
@@ -191,7 +186,7 @@ def reward_to_go(episode, gamma, k):
     reward = 0
     # calculate reward to go
     for i in range(k, len(episode)):
-        reward += (gamma ** (i - k)) * episode[i][1]
+        reward += (gamma ** (i - k + 1)) * episode[i][1]
 
     return reward 
 
@@ -220,7 +215,7 @@ def MC_Policy_Evaluation(policy, states, gamma, MCvalues, G):
 
             # assign mcvalues
             MCvalues[e[0]] = total/len(G[e[0]])
-            print(str(index) + " ------ " + str(MCvalues[e[0]]))
+            # print(str(index) + " ------ " + str(MCvalues[e[0]]))
 
             index += 1
 
@@ -237,6 +232,7 @@ def TD_Policy_Evaluation(policy, states, gamma, TDvalues, NTD):
         Alpha = 0
         # keep simulating until we reach final state
         while True:
+
             # update NTD
             NTD[state] += 1
 
@@ -247,30 +243,88 @@ def TD_Policy_Evaluation(policy, states, gamma, TDvalues, NTD):
                 stand = True
 
             # simulate next step
-            next_s, reward, dealSum = simulate_one_step(state, action, userCard, dealCard, ccards, stand)
+            next_s, reward, gameover = simulate_one_step(state, action, userCard, dealCard, ccards, stand)
 
 
             # calculate Alpha
-            Alpha = float(10/float(9 + NTD[state]))
+            Alpha = 1/float(NTD[state])
 
-            if next_s is None:
-                TDvalues[state] += Alpha*(reward - TDvalues[state])
+            # if next_s is none, set U(next_s) as 0
+            if gameover or stand:
+                # set up the tdvaues for busted states
+                if next_s[0] >= 21:
+                    TDvalues[next_s] += Alpha*(gamma*reward - TDvalues[next_s])
+
+                # set up tdvalues for terminated states
+                TDvalues[state] += Alpha*(gamma*reward - TDvalues[state])
                 break
+                
             # TD formula
-            TDvalues[state] += Alpha*(reward + gamma*TDvalues[next_s] - TDvalues[state])
-            print(TDvalues[state])
-            print(action)
-            print(state)
-            print(reward)
-            print(dealSum)
+            else:
+                TDvalues[state] += Alpha*(reward + gamma*TDvalues[next_s] - TDvalues[state])
 
-            # if next_s == state:
-            #     break
             # update state
             state = next_s
 
+
+def pick_action(state, eps, Q):
+    # random pick an action
+    if random.uniform(0,1) < eps:
+        return random.choice([0,1])
+
+    # find the local best option
+    else:
+        if Q[state][0] > Q[state][1]:
+            return 0
+        else:
+            return 1
+
 def Q_Learning(states, gamma, Qvalues, NQ):
-    pass
+    #Perform 50 simulations in each cycle in each game loop (so total number of simulations increases quickly)
+    for simulation in range(50):
+        # generate random game
+        userCard = []
+        dealCard = []
+        ccards = copy.copy(cards)
+        userSum, userA, dealSum, dealA, dealFirst, dealAFirst = initGame(ccards, userCard, dealCard)
+        state = make_state(userSum, userA, dealFirst, dealAFirst)
+
+        # set up epsoilon and alpha
+        Alpha = 0
+        eps = 0.3
+        while True:
+            # increment counter
+            NQ[state] += 1
+
+            # pick an action based on current state
+            a = pick_action(state, eps, Qvalues)
+
+            # set up stand for simulate one step
+            stand = False
+            if a == 1:
+                stand = True
+
+            # simulate one step
+            next_s, reward, gameover = simulate_one_step(state, a, userCard, dealCard, ccards, stand)
+
+            # calculate Alpha
+            Alpha = 1/float(NQ[state])
+
+            # if next state is none, set its U to be 0
+            if gameover or stand:
+                # update Qvalues for result >= 21
+                if next_s[0] >= 21 or (stand and gameover):
+                    Qvalues[next_s][a] += Alpha*(gamma*reward - Qvalues[next_s][a])
+
+                Qvalues[state][a] +=  Alpha*(gamma*reward - Qvalues[state][a])
+                break
+
+            # update Q value
+            Qvalues[state][a] += Alpha*(reward + gamma*max(Qvalues[state][a], Qvalues[next_s][a]) - Qvalues[state][a])
+
+            # update state
+            state = next_s
+
 
 def main():
     ccards = copy.copy(cards)
@@ -364,9 +418,6 @@ def main():
             #TD Learning
             #Compute the utilities of all states under the policy "Always hit if below 17"
             TD_Policy_Evaluation(policy, states, 0.9, TDvalues, NTD)
-            # index+=1
-            # if index > 1:
-            #     break
         if autoQL:
             #Q-Learning
             #For each state, compute the Q value of the action "Hit" and "Stand"
