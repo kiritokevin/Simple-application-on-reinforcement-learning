@@ -9,10 +9,11 @@ The Hit and Stand buttons are for playing the game manually. Clicking the MC, TD
 
 The Play button at the end will automatically play the game with the learned Q values. You can check how many times you win or lose given the current Q values (so after learning for a while, you can check whether the policy is behaving well). 
 
-- (3 points) Monte Carlo Policy Evaluation 
+We have three different evaluations here:
+1. Monte Carlo Policy Evaluation 
 
-- (4 points) Temporal-Difference Policy Evaluation
+2. Temporal-Difference Policy Evaluation
 
-- (6 points) Q-Learning
+3. Q-Learning
 
 =========
