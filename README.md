@@ -1,7 +1,7 @@
 Blackjack with Reinforcement Learning
 =========
 
-The Game
+The Game:
 -----
 The game more or less follows the standard Blackjack rules. Read the game engine code to see minor simplification (note that the learning algorithms do not need to understand the rules). 
 
