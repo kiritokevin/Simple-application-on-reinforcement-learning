@@ -16,3 +16,4 @@ We have three different evaluations here:
 
 3. Q-Learning
 
+## How to run this program:
